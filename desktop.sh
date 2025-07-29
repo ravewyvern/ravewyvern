@@ -4,7 +4,7 @@
 # Installs NVIDIA drivers, Hyprland, SDDM, and a variety of applications.
 #
 # USAGE:
-# ./setup-desktop.sh
+# ./desktop.sh
 #
 
 # Exit immediately if a command fails
@@ -39,6 +39,7 @@ PACMAN_PACKAGES=(
 AUR_PACKAGES=(
     neo
     youtube-music-bin
+    timeshift-autosnap
 )
 
 # Flatpak application IDs
@@ -57,19 +58,30 @@ FLATPAK_APPS=(
 
 # --- SCRIPT START ---
 
-echo "🚀 Starting post-installation setup..."
+echo "Starting post-installation setup..."
 timedatectl set-ntp true
 
-# --- System Update ---
-echo "setting up automatic snapshot entries update"
-sudo systemctl edit --full grub-btrfsd # FIX THIS NOW
-# Enable grub-btrfsd service to run on boot
-sudo systemctl enable grub-btrfsd
+# Create a systemd override directory for the service
+sudo mkdir -p /etc/systemd/system/grub-btrfsd.service.d/
+
+# Create an override file to modify the service's execution command
+sudo tee /etc/systemd/system/grb-btrfsd.service.d/override.conf > /dev/null <<EOF
+[Service]
+ExecStart=
+ExecStart=/usr/bin/grub-btrfsd --syslog --timeshift-auto
+EOF
+
+# Reload the systemd daemon to apply the changes
+sudo systemctl daemon-reload
+
+# Enable the service to start on boot and start it now
+sudo systemctl enable --now grub-btrfsd
+
+echo "The grub-btrfsd service is now configured for Timeshift and running."
 
 # --- Install AUR Helper (yay) ---
 echo "## Installing AUR Helper (yay)..."
 sudo pacman -S --needed git base-devel && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si
-yay -S timeshift-autosnap
 
 # --- Install Packages ---
 echo "## Installing packages from official repositories..."
@@ -78,23 +90,23 @@ sudo pacman -S --needed --noconfirm "${PACMAN_PACKAGES[@]}"
 echo "## Installing packages from the AUR..."
 yay -S --needed --noconfirm "${AUR_PACKAGES[@]}"
 
-echo "✅ All system and AUR packages installed."
+echo "All system and AUR packages installed."
 
 # --- Enable Services ---
 echo "## Enabling SDDM Display Manager..."
 sudo systemctl enable sddm
-echo "✅ SDDM enabled."
+echo "SDDM enabled."
 
 # --- Flatpak Setup ---
 echo "## Setting up Flatpak and installing applications..."
 sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 flatpak install -y flathub "${FLATPAK_APPS[@]}"
-echo "✅ Flatpak apps installed."
+echo "Flatpak apps installed."
 
 echo "## Applying Flatpak GTK theme overrides..."
 sudo flatpak override --filesystem=xdg-config/gtk-3.0
 sudo flatpak override --filesystem=xdg-config/gtk-4.0
-echo "✅ Flatpak overrides applied."
+echo "Flatpak overrides applied."
 
 # --- Hyprland Configuration ---
 echo "## Preparing to run Hyprland dotfiles setup script..."
@@ -103,7 +115,7 @@ echo "## Source: https://end-4.github.io/dots-hyprland-wiki/setup.sh"
 read -p "Do you want to continue? (y/N): " HYPR_CONFIRM
 if [[ "$HYPR_CONFIRM" =~ ^[yY](es)?$ ]]; then
     bash <(curl -s "https://end-4.github.io/dots-hyprland-wiki/setup.sh")
-    echo "✅ Hyprland setup script finished."
+    echo "Hyprland setup script finished."
 else
     echo "Skipped Hyprland setup script."
 fi
@@ -111,12 +123,11 @@ fi
 # --- Final Reminders ---
 echo ""
 echo "========================================================"
-echo "    🎉 Post-Installation Setup Complete!              "
+echo "         Post-Installation Setup Complete!              "
 echo "========================================================"
 echo ""
-echo "🧠 REMINDER: Don't forget to install the JetBrains Toolbox App"
+echo "   REMINDER: Don't forget to install the JetBrains Toolbox App"
 echo "   from their official website to get your IDEs."
 echo "   https://www.jetbrains.com/toolbox-app/"
 echo ""
-echo "It is recommended to REBOOT your system now."
 echo "To reboot, type: sudo reboot"
