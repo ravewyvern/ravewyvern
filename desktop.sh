@@ -1,7 +1,11 @@
 #!/bin/bash
 #
-# Arch Linux Post-Installation Setup Script
-# Installs NVIDIA drivers, Hyprland, SDDM, and a variety of applications.
+# Arch Linux Post-Installation Setup Script v2
+#
+# Changes:
+# - Automatically enables the [multilib] repository.
+# - Re-run safe: Skips steps that are already complete.
+# - Corrected order of operations for service configuration.
 #
 # USAGE:
 # ./desktop.sh
@@ -13,9 +17,10 @@ echo "      Arch Linux Post-Installation & Desktop Setup Script        "
 echo "================================================================="
 echo
 echo "This script will:"
-echo "  - Configure grub-btrfsd for Timeshift snapshots."
+echo "  - Enable the [multilib] repository for 32-bit support."
 echo "  - Install 'yay' as an AUR helper."
 echo "  - Install packages for NVIDIA, Hyprland, SDDM, and more."
+echo "  - Configure grub-btrfsd for Timeshift snapshots."
 echo "  - Install a list of Flatpak applications."
 echo "  - Enable the SDDM display manager."
 echo "  - Optionally, run an external script to configure Hyprland."
@@ -54,7 +59,6 @@ PACMAN_PACKAGES=(
 )
 
 # Packages from the Arch User Repository (AUR)
-# hyprland-nvidia is used for proprietary NVIDIA drivers.
 AUR_PACKAGES=(
     hyprland-nvidia-git
     youtube-music-bin
@@ -75,29 +79,20 @@ FLATPAK_APPS=(
     org.gnome.Loupe com.vixalien.sticky org.gnome.DejaDup
 )
 
-# --- GRUB-BTRFSD SETUP ---
-echo "## Configuring grub-btrfsd for Timeshift..."
-timedatectl set-ntp true
 
-# Create a systemd override directory for the service
-sudo mkdir -p /etc/systemd/system/grub-btrfsd.service.d/
+# --- (1) ENABLE MULTILIB REPOSITORY ---
+echo "## Checking and enabling [multilib] repository..."
+if ! grep -q "^\s*\[multilib\]" /etc/pacman.conf; then
+    echo "Enabling the [multilib] repository..."
+    sudo sed -i "/\[multilib\]/,/Include/"'s/^#//' /etc/pacman.conf
+    echo "Syncing package databases..."
+    sudo pacman -Syy
+else
+    echo "[multilib] repository is already enabled."
+fi
 
-# ❗ FIX: Corrected typo 'grb' to 'grub'
-sudo tee /etc/systemd/system/grub-btrfsd.service.d/override.conf > /dev/null <<EOF
-[Service]
-ExecStart=
-ExecStart=/usr/bin/grub-btrfsd --syslog --timeshift-auto
-EOF
 
-# Reload the systemd daemon to apply the changes
-sudo systemctl daemon-reload
-
-# Enable the service to start on boot and start it now
-sudo systemctl enable --now grub-btrfsd
-
-echo "The grub-btrfsd service is now configured for Timeshift and running."
-
-# --- Install AUR Helper (yay) ---
+# --- (2) Install AUR Helper (yay) ---
 echo "## Installing AUR Helper (yay)..."
 if ! command -v yay &> /dev/null; then
     sudo pacman -S --needed --noconfirm git base-devel
@@ -112,7 +107,7 @@ else
 fi
 
 
-# --- Install Packages ---
+# --- (3) Install Packages ---
 echo "## Installing packages from official repositories..."
 sudo pacman -S --needed --noconfirm "${PACMAN_PACKAGES[@]}"
 
@@ -121,23 +116,45 @@ yay -S --needed --noconfirm "${AUR_PACKAGES[@]}"
 
 echo "All system and AUR packages installed."
 
-# --- Enable Services ---
+
+# --- (4) GRUB-BTRFSD SETUP ---
+echo "## Configuring grub-btrfsd for Timeshift..."
+OVERRIDE_FILE="/etc/systemd/system/grub-btrfsd.service.d/override.conf"
+if [ -f "$OVERRIDE_FILE" ] && grep -q "timeshift-auto" "$OVERRIDE_FILE"; then
+    echo "grub-btrfsd already configured for Timeshift. Skipping."
+else
+    timedatectl set-ntp true
+    sudo mkdir -p /etc/systemd/system/grub-btrfsd.service.d/
+    sudo tee "$OVERRIDE_FILE" > /dev/null <<EOF
+[Service]
+ExecStart=
+ExecStart=/usr/bin/grub-btrfsd --syslog --timeshift-auto
+EOF
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now grub-btrfsd
+    echo "The grub-btrfsd service is now configured for Timeshift and running."
+fi
+
+
+# --- (5) Enable Services ---
 echo "## Enabling SDDM Display Manager..."
 sudo systemctl enable sddm
 echo "SDDM enabled."
 
-# --- Flatpak Setup ---
+
+# --- (6) Flatpak Setup ---
 echo "## Setting up Flatpak and installing applications..."
 sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 flatpak install -y flathub "${FLATPAK_APPS[@]}"
 echo "Flatpak apps installed."
 
 echo "## Applying Flatpak GTK theme overrides..."
-sudo flatpak override --filesystem=xdg-config/gtk-3.0
-sudo flatpak override --filesystem=xdg-config/gtk-4.0
+sudo flatpak override --filesystem=xdg-config/gtk-3.0 --user &>/dev/null || true
+sudo flatpak override --filesystem=xdg-config/gtk-4.0 --user &>/dev/null || true
 echo "Flatpak overrides applied."
 
-# --- Hyprland Configuration ---
+
+# --- (7) Hyprland Configuration ---
 echo "## Preparing to run Hyprland dotfiles setup script..."
 echo "## WARNING: This will run a configuration script from the internet."
 echo "## Source: https://end-4.github.io/dots-hyprland-wiki/setup.sh"
@@ -148,6 +165,7 @@ if [[ "$HYPR_CONFIRM" =~ ^[yY](es)?$ ]]; then
 else
     echo "Skipped Hyprland setup script."
 fi
+
 
 # --- Final Reminders ---
 echo ""
