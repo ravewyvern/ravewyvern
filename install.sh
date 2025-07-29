@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Arch Linux Installation Script
+# Arch Linux Installation Script (Corrected for Btrfs)
 #
 # WARNING: This script is designed to wipe a disk and install Arch Linux.
 # Review the configuration variables and the script itself carefully before running.
@@ -65,29 +65,35 @@ sgdisk -n 2:0:0 -t 2:8300 "${DISK}"   # Linux filesystem (root)
 
 echo "--> Formatting partitions..."
 mkfs.fat -F 32 "${EFI_PARTITION}"
-mkfs.ext4 "${ROOT_PARTITION}"
+# Corrected: Format the root partition as btrfs instead of ext4
+mkfs.btrfs -f -L ArchRoot "${ROOT_PARTITION}"
 
-echo "--> Mounting file systems..."
+echo "--> Mounting file systems and creating subvolumes..."
+# Mount the top-level Btrfs volume to create subvolumes
 mount "${ROOT_PARTITION}" /mnt
 
-echo "--> mounting disks..."
+# Create Btrfs subvolumes
 btrfs subvolume create /mnt/@
 btrfs subvolume create /mnt/@home
-# Unmount the root fs
+
+# Unmount the top-level volume
 umount /mnt
-# Mount the root and home subvolume. If you don't want compression just remove the compress option.
-mount -o compress=zstd,subvol=@ /dev/nvme0n1p2 /mnt
+
+# Mount the subvolumes with desired options (e.g., compression)
+mount -o compress=zstd,subvol=@ "${ROOT_PARTITION}" /mnt
+# Create mount points for other partitions/subvolumes
 mkdir -p /mnt/home
-mount -o compress=zstd,subvol=@home /dev/nvme0n1p2 /mnt/home
 mkdir -p /mnt/efi
-mount /dev/nvme0n1p1 /mnt/efi
+mount -o compress=zstd,subvol=@home "${ROOT_PARTITION}" /mnt/home
+mount "${EFI_PARTITION}" /mnt/efi
 
 # --- Installation ---
 echo "--> Installing base system and essential packages..."
-# We install both intel-ucode and amd-ucode for broader compatibility.
+# We install btrfs-progs to manage the Btrfs filesystem.
 pacstrap -K /mnt base base-devel linux linux-firmware git btrfs-progs grub efibootmgr grub-btrfs inotify-tools timeshift vim networkmanager pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber reflector zsh zsh-completions zsh-autosuggestions openssh man sudo
 
 echo "--> Generating fstab..."
+# The -U flag uses UUIDs for more robust mounting
 genfstab -U /mnt >> /mnt/etc/fstab
 
 # --- System Configuration (chroot) ---
@@ -141,7 +147,7 @@ echo "--> Unmounting all partitions..."
 umount -R /mnt
 
 echo "======================================================"
-echo "             INSTALLATION COMPLETE!                   "
+echo "               INSTALLATION COMPLETE!                 "
 echo "======================================================"
 echo
 echo "You can now reboot the system. Please remove the installation media."
