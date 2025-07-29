@@ -7,6 +7,25 @@
 # ./desktop.sh
 #
 
+# --- SCRIPT START & CONFIRMATION ---
+echo "================================================================="
+echo "      Arch Linux Post-Installation & Desktop Setup Script        "
+echo "================================================================="
+echo
+echo "This script will:"
+echo "  - Configure grub-btrfsd for Timeshift snapshots."
+echo "  - Install 'yay' as an AUR helper."
+echo "  - Install packages for NVIDIA, Hyprland, SDDM, and more."
+echo "  - Install a list of Flatpak applications."
+echo "  - Enable the SDDM display manager."
+echo "  - Optionally, run an external script to configure Hyprland."
+echo
+read -p "Do you want to continue with the setup? (y/N): " CONFIRM
+if [[ ! "$CONFIRM" =~ ^[yY](es)?$ ]]; then
+    echo "Setup cancelled by user."
+    exit 1
+fi
+
 # Exit immediately if a command fails
 set -e
 
@@ -37,7 +56,7 @@ PACMAN_PACKAGES=(
 # Packages from the Arch User Repository (AUR)
 # hyprland-nvidia is used for proprietary NVIDIA drivers.
 AUR_PACKAGES=(
-    neo
+    hyprland-nvidia-git
     youtube-music-bin
     timeshift-autosnap
 )
@@ -56,16 +75,15 @@ FLATPAK_APPS=(
     org.gnome.Loupe com.vixalien.sticky org.gnome.DejaDup
 )
 
-# --- SCRIPT START ---
-
-echo "Starting post-installation setup..."
+# --- GRUB-BTRFSD SETUP ---
+echo "## Configuring grub-btrfsd for Timeshift..."
 timedatectl set-ntp true
 
 # Create a systemd override directory for the service
 sudo mkdir -p /etc/systemd/system/grub-btrfsd.service.d/
 
-# Create an override file to modify the service's execution command
-sudo tee /etc/systemd/system/grb-btrfsd.service.d/override.conf > /dev/null <<EOF
+# ❗ FIX: Corrected typo 'grb' to 'grub'
+sudo tee /etc/systemd/system/grub-btrfsd.service.d/override.conf > /dev/null <<EOF
 [Service]
 ExecStart=
 ExecStart=/usr/bin/grub-btrfsd --syslog --timeshift-auto
@@ -81,7 +99,18 @@ echo "The grub-btrfsd service is now configured for Timeshift and running."
 
 # --- Install AUR Helper (yay) ---
 echo "## Installing AUR Helper (yay)..."
-sudo pacman -S --needed git base-devel && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si
+if ! command -v yay &> /dev/null; then
+    sudo pacman -S --needed --noconfirm git base-devel
+    git clone https://aur.archlinux.org/yay.git
+    cd yay
+    makepkg -si --noconfirm
+    cd ..
+    rm -rf yay
+    echo "yay installed successfully."
+else
+    echo "yay is already installed. Skipping."
+fi
+
 
 # --- Install Packages ---
 echo "## Installing packages from official repositories..."
@@ -123,7 +152,7 @@ fi
 # --- Final Reminders ---
 echo ""
 echo "========================================================"
-echo "         Post-Installation Setup Complete!              "
+echo "          Post-Installation Setup Complete!           "
 echo "========================================================"
 echo ""
 echo "   REMINDER: Don't forget to install the JetBrains Toolbox App"
