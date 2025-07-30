@@ -53,7 +53,7 @@ PACMAN_PACKAGES=(
     # GNOME Applications
     gnome-clocks gnome-calendar gnome-maps evince
     gnome-logs gnome-contacts gnome-boxes gnome-software
-
+    file-roller bluez bluez-utils
     # General Applications
     gimp kdeconnect sddm-kcm
 )
